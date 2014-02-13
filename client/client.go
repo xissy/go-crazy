@@ -8,6 +8,7 @@ import (
 	"../http"
 	"../tcp"
 	"../udp"
+	"../udpsender"
 	"../session"
 )
 
@@ -37,7 +38,7 @@ func ConnectToServer(host string, httpPort, tcpPort, udpPort int) (*session.Sess
 	currentSession.UdpConn = udpConn
 	currentSession.HttpBaseUrl = baseUrl
 
-	err = udp.SendPayloadsForInitialGap(currentSession)
+	err = udpsender.SendPayloadsForInitialGap(currentSession)
 	if err != nil { return nil, err }
 
 	time.Sleep(100 * time.Millisecond)

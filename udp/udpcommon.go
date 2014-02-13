@@ -1,17 +1,18 @@
 package udp
 
 import (
-	// "fmt"
+	"fmt"
 	"net"
 	"log"
-	// "encoding/binary"
+	"encoding/binary"
 	"time"
 	"errors"
 	"github.com/nu7hatch/gouuid"
+	"../payload"
 	"../session"
 )
 
-func loopToReadPayload(payloadChannel chan *Payload,
+func loopToReadPayload(payloadChannel chan *payload.Payload,
 					udpConn *net.UDPConn) error {
 	for {
 		buffer := make([]byte, 1400)
@@ -22,26 +23,26 @@ func loopToReadPayload(payloadChannel chan *Payload,
 			continue
 		}
 
-		payload := new(Payload)
-		payload.UdpAddr = udpAddr
-		payload.UdpConn = udpConn
-		payload.Buffer = buffer
-		payload.BufferLength = bufferLength
+		currentPayload := new(payload.Payload)
+		currentPayload.UdpAddr = udpAddr
+		currentPayload.UdpConn = udpConn
+		currentPayload.Buffer = buffer
+		currentPayload.BufferLength = bufferLength
 
-		payloadChannel <- payload
+		payloadChannel <- currentPayload
 	}
 
 	return nil
 }
 
-func loopToHandlePayload(payloadChannel chan *Payload) error {
+func loopToHandlePayload(payloadChannel chan *payload.Payload) error {
 	for {
-		payload := <- payloadChannel
+		currentPayload := <- payloadChannel
 
-		handlePayload(payload)
+		handlePayload(currentPayload)
 
-		payload.Buffer = nil
-		payload = nil
+		currentPayload.Buffer = nil
+		currentPayload = nil
 	}
 
 	return nil
@@ -62,25 +63,34 @@ func loopToSendHeartbeat(currentSession *session.Session) {
 	}
 }
 
-func handlePayload(payload *Payload) error {
-	buffer := payload.Buffer
+func handlePayload(currentPayload *payload.Payload) error {
+	buffer := currentPayload.Buffer
 	opCode := string(buffer[:4])
-	sessionId := new(uuid.UUID)
-	copy(sessionId[:], buffer[4:20])
 
-	// fmt.Println("BufferLength:", payload.BufferLength)
-	// fmt.Println("opCode:", opCode)
-	// fmt.Println("sessionId:", sessionId)
+	fmt.Println("BufferLength:", currentPayload.BufferLength)
+	fmt.Println("opCode:", opCode)
+	// fmt.Println("sessionId or fileId:", sessionId)
 
-	currentSession, err := session.GetSession(sessionId)
-	if err != nil { return err }
-	if currentSession == nil { return errors.New("Session is nil: " + sessionId.String()) }
+	// currentSession, err := session.GetSession(sessionId)
+	// if err != nil { return err }
+	// currentFile, err := file.GetFile(fileId)
+	// if err != nil { return err }
+	
+	// if currentSession == nil && currentFile == nil {
+	// 	return errors.New("currentSession or currentFile is nil: " + sessionId.String())
+	// }
 
 	switch opCode {
 	case "4GAP":
+		sessionId := new(uuid.UUID)
+		copy(sessionId[:], buffer[4:20])
+		currentSession, err := session.GetSession(sessionId)
+		if err != nil { return err }
+		if currentSession == nil { return errors.New("currentSession is nil.") }
+
 		if currentSession.UdpConn == nil {
-			currentSession.UdpConn = payload.UdpConn
-			currentSession.UdpAddr = payload.UdpAddr
+			currentSession.UdpConn = currentPayload.UdpConn
+			currentSession.UdpAddr = currentPayload.UdpAddr
 			
 			go loopToSendHeartbeat(currentSession)
 		}
@@ -101,47 +111,22 @@ func handlePayload(payload *Payload) error {
 		}
 
 		// fmt.Println(currentSession)
-		// fmt.Println("currentSession.PrevInitialPayloadTime:", currentSession.PrevInitialPayloadTime)
-		// fmt.Println("currentSession.InitialPayloadGapSum:", currentSession.InitialPayloadGapSum)
-		// fmt.Println("currentSession.InitialPayloadCount:", currentSession.InitialPayloadCount)
-		// fmt.Println("currentSession.InitialPayloadGap:", currentSession.InitialPayloadGap)
+		fmt.Println("currentSession.PrevInitialPayloadTime:", currentSession.PrevInitialPayloadTime)
+		fmt.Println("currentSession.InitialPayloadGapSum:", currentSession.InitialPayloadGapSum)
+		fmt.Println("currentSession.InitialPayloadCount:", currentSession.InitialPayloadCount)
+		fmt.Println("currentSession.InitialPayloadGap:", currentSession.InitialPayloadGap)
 
 	case "BEAT":
 
 	case "DATA":
+		fileId := new(uuid.UUID)
+		copy(fileId[:], buffer[4:20])
+		payloadNo, _ := binary.Varint(buffer[20:28])
+		log.Println("received DATA:", payloadNo, fileId)
 		
-	}
+	case "ACK1":
 
-	return nil
-}
-
-func SendPayload(currentSession *session.Session, payload *Payload) error {
-	udpConn := currentSession.UdpConn
-	udpAddr := currentSession.UdpAddr
-
-	_, err := udpConn.WriteToUDP(payload.Buffer[:payload.BufferLength], udpAddr)
-	if err != nil {
-		_, err := udpConn.Write(payload.Buffer[:payload.BufferLength])
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func SendPayloadsForInitialGap(currentSession *session.Session) error {
-	sessionId := currentSession.SessionId
-
-	dummyBytes := make([]byte, 1000)
-
-	for i := 0; i < 100; i++ {
-		payload := new(Payload)
-		payload.Buffer = append([]byte("4GAP"), (*sessionId)[:]...)
-		payload.Buffer = append(payload.Buffer, dummyBytes...)
-		payload.BufferLength = len(dummyBytes)
-		
-		SendPayload(currentSession, payload)
+	case "ACK2":
 	}
 
 	return nil

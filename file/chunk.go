@@ -2,11 +2,11 @@ package file
 
 import (
 	"github.com/nu7hatch/gouuid"
-	"../udp"
+	"../payload"
 )
 
 type Chunk struct {
 	SessionId *uuid.UUID
-	Payloads []*udp.Payload
+	Payloads []*payload.Payload
 	StartPosition uint64
 }

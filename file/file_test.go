@@ -5,13 +5,23 @@ import (
 	// "fmt"
 	"time"
 	"github.com/nu7hatch/gouuid"
+	"../session"
 )
 
-func TestReadAndWriteFile(t *testing.T) {
+func TestReadFile(t *testing.T) {
 	srcFilePath := "../test.mp3"
-	destFilePath := "../test.write.mp3"
 
 	sessionId, err := uuid.NewV4()
+	if err != nil {
+	  t.Error("Failed to generate sessionId:", err)
+	  return
+	}
+
+	currentSession := new(session.Session)
+	currentSession.SessionId = sessionId
+	session.PutSession(currentSession)
+
+	currentSession.SendingPayloadGap = time.Duration(1000 * time.Nanosecond)
 
 	srcFile, err := StartToReadFile(sessionId, srcFilePath)
 	if err != nil {
@@ -19,11 +29,30 @@ func TestReadAndWriteFile(t *testing.T) {
 	  return
 	}
 
-	destFile := new(File)
-	destFile.DestFilePath = destFilePath
-	destFile.PayloadChannel = srcFile.PayloadChannel
+	// fmt.Println(srcFile)
 
-	err = StartToWriteFile(destFile)
+	// go routine for deleting payloads from file.SendingPayloadMap
+	go func() {
+		var i int64
+		i = 0
+
+		time.Sleep(100 * time.Millisecond)
+
+		for {
+			DeleteFromSendingPayloadMap(srcFile, i)
+			// fmt.Println("DeleteFromSendingPayloadMap:", i)
+			i++
+			time.Sleep(1000 * time.Nanosecond)
+
+			if i > 10000 {
+				i = 0
+			}
+
+			if srcFile.IsSendingFinished {
+				break
+			}
+		}
+	}()
 
 	time.Sleep(1 * time.Second)
 }

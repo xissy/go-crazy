@@ -9,7 +9,8 @@ import (
 	"github.com/ant0ine/go-json-rest"
 	"../session"
 	"../file"
-	"../udp"
+	"../udpsender"
+	"../payload"
 )
 
 func CreateSessionHandler(w *rest.ResponseWriter, req *rest.Request) {
@@ -43,7 +44,7 @@ func AuthSessionHandler(w *rest.ResponseWriter, req *rest.Request) {
 
 	isSuccess := false
 	if currentSession.UdpAddr != nil {
-		udp.SendPayloadsForInitialGap(currentSession)
+		udpsender.SendPayloadsForInitialGap(currentSession)
 		isSuccess = true
 
 		time.Sleep(100 * time.Millisecond)
@@ -61,7 +62,7 @@ func AuthSessionHandler(w *rest.ResponseWriter, req *rest.Request) {
 func SendFileHandler(w *rest.ResponseWriter, req *rest.Request) {
 	currentFile := new(file.File)
 	req.DecodeJsonPayload(currentFile)
-	currentFile.PayloadChannel = make(chan *udp.Payload)
+	currentFile.PayloadChannel = make(chan *payload.Payload)
 
 	file.PutFile(currentFile)
 

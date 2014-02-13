@@ -3,7 +3,8 @@ package crazy
 import (
 	"testing"
 	"fmt"
-	// "time"
+	"os"
+	"time"
 	"github.com/nu7hatch/gouuid"
 	"../http"
 	// "../udp"
@@ -13,8 +14,8 @@ import (
 )
 
 func TestInitialPayloadGap(t *testing.T) {
-	// host := "127.0.0.1"
-	host := "dev.pricepoller.com"
+	host := "127.0.0.1"
+	// host := "dev.pricepoller.com"
 	httpPort := 8080
 	tcpPort := 20068
 	udpPort := 20069
@@ -36,12 +37,19 @@ func TestInitialPayloadGap(t *testing.T) {
 
 	fileId, err := uuid.NewV4()
 
+	srcFileInfo, err := os.Stat("../test.mp3")
+	if err != nil {
+		t.Error("Failed to get srcFileInfo:", err)
+	}
+	srcFileSize := srcFileInfo.Size()
+	fmt.Println("srcFileSize:", srcFileSize)
+
 	destFileInfo := new(http.FileInfo)
 	destFileInfo.SessionId = sessionId
 	destFileInfo.FileId = fileId
-	destFileInfo.DestFilePath = "dest.mp3"
-	destFileInfo.FileSize = 7000000000
-	destFileInfo.PayloadDataSize = 1000
+	destFileInfo.DestFilePath = "./test.write.mp3"
+	destFileInfo.FileSize = srcFileSize
+	destFileInfo.PayloadDataSize = file.DefaultPayloadDataSize
 
 	sendFileJson, err := http.SendFile(baseUrl, sessionId, destFileInfo)
 	if err != nil {
@@ -58,5 +66,5 @@ func TestInitialPayloadGap(t *testing.T) {
 	fmt.Println("srcFile:", srcFile)
 
 
-	// time.Sleep(1000000 * time.Second)
+	time.Sleep(1000000 * time.Second)
 }

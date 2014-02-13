@@ -3,7 +3,8 @@ package file
 import (
 	"os"
 	"github.com/nu7hatch/gouuid"
-	"../udp"
+	"github.com/willf/bitset"
+	"../payload"
 	"../session"
 )
 
@@ -19,7 +20,11 @@ type File struct {
 	DestFilePath string
 	FileSize int64
 	PayloadDataSize int
-	PayloadChannel chan *udp.Payload
+	PayloadChannel chan *payload.Payload
+	SendingPayloadMap map[int64]*payload.Payload
+	IsReadingFinished bool
+	IsSendingFinished bool
+	ReceivedPayloadBitSet *bitset.BitSet
 
 	// Chunks []*Chunk
 }

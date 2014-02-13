@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"log"
+	"../payload"
 )
 
 func ConnectToUdpServer(host string, port int) (*net.UDPConn, error) {
@@ -19,7 +20,7 @@ func ConnectToUdpServer(host string, port int) (*net.UDPConn, error) {
 	udpConn.SetReadBuffer(0)
 	udpConn.SetWriteBuffer(0)
 
-	payloadChannel := make(chan *Payload)
+	payloadChannel := make(chan *payload.Payload)
 
 	go loopToReadPayload(payloadChannel, udpConn)
 	go loopToHandlePayload(payloadChannel)
