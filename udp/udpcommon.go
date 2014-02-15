@@ -1,19 +1,26 @@
 package udp
 
 import (
-	"fmt"
 	"net"
 	"log"
+	"os"
 	"encoding/binary"
 	"time"
 	"errors"
 	"github.com/nu7hatch/gouuid"
+	"github.com/willf/bitset"
 	"../payload"
 	"../session"
+	"../file"
+	"../udpsender"
 )
+
+var i int
 
 func loopToReadPayload(payloadChannel chan *payload.Payload,
 					udpConn *net.UDPConn) error {
+	i++
+
 	for {
 		buffer := make([]byte, 1400)
 
@@ -40,9 +47,6 @@ func loopToHandlePayload(payloadChannel chan *payload.Payload) error {
 		currentPayload := <- payloadChannel
 
 		handlePayload(currentPayload)
-
-		currentPayload.Buffer = nil
-		currentPayload = nil
 	}
 
 	return nil
@@ -65,25 +69,17 @@ func loopToSendHeartbeat(currentSession *session.Session) {
 
 func handlePayload(currentPayload *payload.Payload) error {
 	buffer := currentPayload.Buffer
+	bufferLength := currentPayload.BufferLength
 	opCode := string(buffer[:4])
 
-	fmt.Println("BufferLength:", currentPayload.BufferLength)
-	fmt.Println("opCode:", opCode)
-	// fmt.Println("sessionId or fileId:", sessionId)
-
-	// currentSession, err := session.GetSession(sessionId)
-	// if err != nil { return err }
-	// currentFile, err := file.GetFile(fileId)
-	// if err != nil { return err }
-	
-	// if currentSession == nil && currentFile == nil {
-	// 	return errors.New("currentSession or currentFile is nil: " + sessionId.String())
-	// }
+	// log.Println("BufferLength:", currentPayload.BufferLength)
+	// log.Println("opCode:", opCode)
 
 	switch opCode {
 	case "4GAP":
 		sessionId := new(uuid.UUID)
 		copy(sessionId[:], buffer[4:20])
+		
 		currentSession, err := session.GetSession(sessionId)
 		if err != nil { return err }
 		if currentSession == nil { return errors.New("currentSession is nil.") }
@@ -105,25 +101,127 @@ func handlePayload(currentPayload *payload.Payload) error {
 			currentSession.PrevInitialPayloadTime = now
 			currentSession.InitialPayloadGapSum += gap
 			currentSession.InitialPayloadCount++
-			currentSession.InitialPayloadGap = 
-				currentSession.InitialPayloadGapSum / 
-				time.Duration(currentSession.InitialPayloadCount)
+			if currentSession.InitialPayloadCount > 100 {
+				currentSession.InitialPayloadGap = 
+					(currentSession.InitialPayloadGapSum - time.Duration(100 * time.Millisecond))/ 
+					time.Duration(currentSession.InitialPayloadCount)
+			} else {
+				currentSession.InitialPayloadGap = 
+					currentSession.InitialPayloadGapSum / 
+					time.Duration(currentSession.InitialPayloadCount)
+			}
 		}
 
-		// fmt.Println(currentSession)
-		fmt.Println("currentSession.PrevInitialPayloadTime:", currentSession.PrevInitialPayloadTime)
-		fmt.Println("currentSession.InitialPayloadGapSum:", currentSession.InitialPayloadGapSum)
-		fmt.Println("currentSession.InitialPayloadCount:", currentSession.InitialPayloadCount)
-		fmt.Println("currentSession.InitialPayloadGap:", currentSession.InitialPayloadGap)
+		buffer = nil
+
+		// log.Println("currentSession.PrevInitialPayloadTime:", currentSession.PrevInitialPayloadTime)
+		// log.Println("currentSession.InitialPayloadGapSum:", currentSession.InitialPayloadGapSum)
+		// log.Println("currentSession.InitialPayloadCount:", currentSession.InitialPayloadCount)
+		// log.Println("currentSession.InitialPayloadGap:", currentSession.InitialPayloadGap)
 
 	case "BEAT":
 
 	case "DATA":
 		fileId := new(uuid.UUID)
 		copy(fileId[:], buffer[4:20])
+
+		currentFile, err := file.ReceivingFileMap.GetFile(fileId)
+		if err != nil { return err }
+		if currentFile == nil { return errors.New("currentFile is nil.") }
+
 		payloadNo, _ := binary.Varint(buffer[20:28])
-		log.Println("received DATA:", payloadNo, fileId)
+		payloadNo = payloadNo
 		
+		// log.Println("received DATA:",  fileId, payloadNo, i)
+		i++
+
+		chunkNo := int(payloadNo / int64(currentFile.PayloadCountInChunk))
+
+		payloadNoInChunk := int(payloadNo % int64(currentFile.PayloadCountInChunk))
+
+		if currentFile.ReceivingChunkMap[chunkNo] == nil {
+			chunk := currentFile.NewChunk(chunkNo)
+
+			// calculate PayloadsLength.
+			chunkStartPosition := 
+				int64(chunkNo) * int64(currentFile.PayloadDataSize) * 
+					int64(currentFile.PayloadCountInChunk)
+			chunkFullEndPosition := 
+				chunkStartPosition + 
+					(int64(currentFile.PayloadDataSize) * int64(currentFile.PayloadCountInChunk))
+			
+			if chunkFullEndPosition <= currentFile.FileSize {
+				chunk.PayloadsLength = currentFile.PayloadCountInChunk
+			} else {
+				chunk.PayloadsLength = 
+					int((currentFile.FileSize - chunkStartPosition) / int64(currentFile.PayloadDataSize)) + 1
+			}
+
+			chunk.ReceivedPayloadBitSet = bitset.New(uint(chunk.PayloadsLength))
+
+			currentFile.ReceivingChunkMap[chunkNo] = chunk
+		}
+
+		chunk := currentFile.ReceivingChunkMap[chunkNo]
+		chunk.Payloads[payloadNoInChunk] = currentPayload
+		chunk.ReceivedPayloadBitSet.Set(uint(payloadNoInChunk))
+
+		if i % 10 == 0 {
+			nak1Payload, _ := chunk.NewNak1Payload()
+			if nak1Payload != nil {
+				udpsender.SendPayload(nak1Payload)
+			}
+		}
+
+		if chunk.ReceivedPayloadBitSet.All() {
+			nak1Payload, _ := chunk.NewNak1Payload()
+			if nak1Payload != nil {
+				udpsender.SendPayload(nak1Payload)
+			}
+
+			udpsender.SendPayload(nak1Payload)
+
+			if !currentFile.FinishedChunkBitSet.Test(uint(chunkNo)) {
+				chunk.WriteToFile(currentFile)
+
+				currentFile.FinishedChunkBitSet.Set(uint(chunkNo))
+
+				if currentFile.FinishedChunkBitSet.All() {
+					delete(file.ReceivingFileMap, *fileId)
+					// os.Exit(0)
+				}
+			}
+		}
+		
+	case "NAK1":
+		fileId := new(uuid.UUID)
+		copy(fileId[:], buffer[4:20])
+
+		currentFile, err := file.SendingFileMap.GetFile(fileId)
+		if err != nil { return err }
+		if currentFile == nil { return errors.New("currentFile is nil.") }
+
+		chunkNoInt64, _ := binary.Varint(buffer[20:28])		
+		chunkNo := int(chunkNoInt64)
+		
+		// log.Println("received NAK1:",  fileId, chunkNo, i)
+		i++
+
+		receivedPayloadBitSet := new(bitset.BitSet)
+		receivedPayloadBitSet.UnmarshalJSON(buffer[28:bufferLength])
+
+		err = currentFile.DeleteReceivedPayloads(chunkNo, receivedPayloadBitSet)
+
+		// log.Println("currentFile.FinishedChunkBitSet:", currentFile.FinishedChunkBitSet.DumpAsBits())
+
+		if currentFile.FinishedChunkBitSet.All() {
+			log.Println("Time:", time.Now().Sub(file.StartToReadFileTime))
+
+			os.Exit(0)
+		}
+
+		buffer = nil
+
 	case "ACK1":
 
 	case "ACK2":

@@ -5,15 +5,18 @@ import (
 	"github.com/nu7hatch/gouuid"
 )
 
-var FileMap map[uuid.UUID]*File
+type FileMap map[uuid.UUID]*File
 
-func checkAndNewFileMap() {
-	if FileMap == nil {
-		FileMap = make(map[uuid.UUID]*File)
+var SendingFileMap FileMap
+var ReceivingFileMap FileMap
+
+func (fileMap FileMap) checkAndNewFileMap() {
+	if fileMap == nil {
+		fileMap = make(FileMap)
 	}
 }
 
-func NewFileId() (*uuid.UUID, error) {
+func (fileMap FileMap) NewFileId() (*uuid.UUID, error) {
 	fileId, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
@@ -22,32 +25,32 @@ func NewFileId() (*uuid.UUID, error) {
 	return fileId, nil
 }
 
-func PutFile(file *File) error {
-	checkAndNewFileMap()
+func (fileMap FileMap) PutFile(file *File) error {
+	fileMap.checkAndNewFileMap()
 
 	if file.FileId == nil {
 		return errors.New("invalid fileId")
 	}
 
-	FileMap[*file.FileId] = file
+	fileMap[*file.FileId] = file
 
 	return nil
 }
 
-func NewFile() (*File, error) {
-	fileId, err := NewFileId()
+func (fileMap FileMap) NewFile() (*File, error) {
+	fileId, err := fileMap.NewFileId()
 	if err != nil { return nil, err }
 
 	file := new(File)
 	file.FileId = fileId
-	err = PutFile(file)
+	err = fileMap.PutFile(file)
 	if err != nil { return nil, err }
 
 	return file, nil
 }
 
-func GetFile(fileId *uuid.UUID) (*File, error) {
-	checkAndNewFileMap()
+func (fileMap FileMap) GetFile(fileId *uuid.UUID) (*File, error) {
+	fileMap.checkAndNewFileMap()
 
-	return FileMap[*fileId], nil
+	return fileMap[*fileId], nil
 }

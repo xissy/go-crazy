@@ -16,8 +16,8 @@ func StartUdpServer(udpPort int) error {
 	udpConn, err := net.ListenUDP("udp", udpServerAddr)
 	if err != nil { return err }
 
-	udpConn.SetReadBuffer(0)
-	udpConn.SetWriteBuffer(0)
+	udpConn.SetReadBuffer(20000000)
+	udpConn.SetWriteBuffer(20000000)
 
 	payloadChannel := make(chan *payload.Payload)
 

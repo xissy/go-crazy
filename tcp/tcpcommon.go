@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"log"
 	"net"
 	"errors"
 	"github.com/nu7hatch/gouuid"
@@ -11,7 +12,7 @@ func loopToReadStream(streamMap map[*net.TCPConn]*Stream,
 					streamChannel chan *Stream,
 					tcpConn *net.TCPConn) error {
 	for {
-		buffer := make([]byte, 1400)
+		buffer := make([]byte, 8000)
 		bufferLength, err := tcpConn.Read(buffer)
 		if err != nil {
 			currentStream := streamMap[tcpConn]
@@ -23,6 +24,8 @@ func loopToReadStream(streamMap map[*net.TCPConn]*Stream,
 				currentSession.IsDisconnected = true
 
 				session.DeleteSession(sessionId)
+
+				log.Println("Disconnected.")
 
 				// TODO: delete the files in FileMap.
 			}

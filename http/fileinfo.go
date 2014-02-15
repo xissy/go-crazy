@@ -11,4 +11,5 @@ type FileInfo struct {
 	DestFilePath string
 	FileSize int64
 	PayloadDataSize int
+	PayloadCountInChunk int
 }

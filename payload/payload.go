@@ -4,6 +4,8 @@ import (
 	"net"
 )
 
+const DefaultPayloadDataSize int = 1024
+
 type Payload struct {
 	UdpAddr *net.UDPAddr
 	UdpConn *net.UDPConn

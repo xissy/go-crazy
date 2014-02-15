@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"time"
 	"./server"
+	"./file"
 )
 
 func main() {
 	httpPort := 8080
 	tcpPort := 20068
 	udpPort := 20069
+
+	file.SendingFileMap = make(file.FileMap)
+	file.ReceivingFileMap = make(file.FileMap)
 
 	err := server.StartServer(httpPort, tcpPort, udpPort)
 	if err != nil {

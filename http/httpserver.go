@@ -2,7 +2,6 @@ package http
 
 import (
 	"log"
-	"fmt"
 	"time"
 	"net/http"
 	"github.com/nu7hatch/gouuid"
@@ -10,7 +9,6 @@ import (
 	"../session"
 	"../file"
 	"../udpsender"
-	"../payload"
 )
 
 func CreateSessionHandler(w *rest.ResponseWriter, req *rest.Request) {
@@ -62,14 +60,6 @@ func AuthSessionHandler(w *rest.ResponseWriter, req *rest.Request) {
 func SendFileHandler(w *rest.ResponseWriter, req *rest.Request) {
 	currentFile := new(file.File)
 	req.DecodeJsonPayload(currentFile)
-	currentFile.PayloadChannel = make(chan *payload.Payload)
-
-	file.PutFile(currentFile)
-
-	fmt.Println(file.FileMap)
-	fmt.Println(file.FileMap[*currentFile.FileId])
-
-	file.StartToWriteFile(currentFile)
 
 	sessionIdString := req.PathParam("sessionId")
 	sessionId, err := uuid.ParseHex(sessionIdString)
@@ -78,7 +68,23 @@ func SendFileHandler(w *rest.ResponseWriter, req *rest.Request) {
 		return
 	}
 
-	fmt.Println(sessionId)
+	currentSession, err := session.GetSession(sessionId)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	currentFile.SessionId = currentSession.SessionId
+	currentFile.Session = currentSession
+
+	log.Println("currentFile:", currentFile)
+
+	file.ReceivingFileMap.PutFile(currentFile)
+
+	log.Println(file.ReceivingFileMap)
+	log.Println(file.ReceivingFileMap[*currentFile.FileId])
+
+	file.StartToWriteFile(currentFile)
 
 	message := Message {
 		IsSuccess: true,

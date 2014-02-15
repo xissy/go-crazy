@@ -6,9 +6,9 @@ import (
 	"../session"
 )
 
-func SendPayload(currentSession *session.Session, currentPayload *payload.Payload) error {
-	udpConn := currentSession.UdpConn
-	udpAddr := currentSession.UdpAddr
+func SendPayload(currentPayload *payload.Payload) error {
+	udpAddr := currentPayload.UdpAddr
+	udpConn := currentPayload.UdpConn
 
 	if udpConn == nil {
 		return errors.New("udpConn is nil")
@@ -31,15 +31,19 @@ func SendPayload(currentSession *session.Session, currentPayload *payload.Payloa
 func SendPayloadsForInitialGap(currentSession *session.Session) error {
 	sessionId := currentSession.SessionId
 
-	dummyBytes := make([]byte, 1000)
+	dummyBytes := make([]byte, payload.DefaultPayloadDataSize)
 
 	for i := 0; i < 100; i++ {
 		currentPayload := new(payload.Payload)
+
+		currentPayload.UdpAddr = currentSession.UdpAddr
+		currentPayload.UdpConn = currentSession.UdpConn
+
 		currentPayload.Buffer = append([]byte("4GAP"), (*sessionId)[:]...)
 		currentPayload.Buffer = append(currentPayload.Buffer, dummyBytes...)
 		currentPayload.BufferLength = len(dummyBytes)
 		
-		SendPayload(currentSession, currentPayload)
+		SendPayload(currentPayload)
 	}
 
 	return nil

@@ -12,7 +12,7 @@ import (
 	"../session"
 )
 
-func ConnectToServer(host string, httpPort, tcpPort, udpPort int) (*session.Session, error){
+func ConnectToServer(host string, httpPort, tcpPort, udpPort int) (*session.Session, error) {
 	tcpConn, err := tcp.ConnectToTcpServer(host, tcpPort)
 	if err != nil { return nil, err }
 
@@ -45,8 +45,6 @@ func ConnectToServer(host string, httpPort, tcpPort, udpPort int) (*session.Sess
 
 	authResponseJson, err := http.Auth(baseUrl, sessionId)
 	if err != nil { return nil, err }
-	  
-	fmt.Println("authResponseJson:", authResponseJson)
 
 	if !authResponseJson.IsSuccess {
 		return nil, errors.New("UDP payloads're not reached")
@@ -54,8 +52,6 @@ func ConnectToServer(host string, httpPort, tcpPort, udpPort int) (*session.Sess
 
 	currentSession.SendingPayloadGap = authResponseJson.InitialPayloadGap
 	currentSession.ReceivingPayloadGap = currentSession.InitialPayloadGap
-
-	fmt.Println("currentSession:", currentSession)
 
 	return currentSession, nil
 }
