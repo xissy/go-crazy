@@ -5,16 +5,19 @@ import (
 	"os"
 	"errors"
 	"time"
+	"io"
+	"bufio"
 	"github.com/nu7hatch/gouuid"
-	"github.com/willf/bitset"
 	"../udpsender"
 	"../payload"
 	"../session"
 )
 
-const DefaultChunkBufferSize int = 10
+const DefaultSendingPayloadMapCapacity int = 10000
 
 var StartToReadFileTime time.Time
+
+// var incDuration time.Duration
 
 func StartToReadFile(sessionId *uuid.UUID, fileId *uuid.UUID, filename string) (*File, error) {
 	currentSession, err := session.GetSession(sessionId)
@@ -35,47 +38,52 @@ func StartToReadFile(sessionId *uuid.UUID, fileId *uuid.UUID, filename string) (
 	file.Session = currentSession
 	file.FileId = fileId
 	file.SrcFileHandle = srcFileHandle
+	file.FileSize = srcFileSize
 	file.PayloadDataSize = payload.DefaultPayloadDataSize
 	file.PayloadCountInChunk = DefaultPayloadCountInChunk
-	file.ChunkBufferSize = DefaultChunkBufferSize
-	file.WaitForChunkBufferSpaceChannel = make(chan bool)
-	chunkCount := uint(srcFileSize  / int64(file.PayloadDataSize) / int64(file.PayloadCountInChunk)) + uint(1)
-	file.FinishedChunkBitSet = bitset.New(chunkCount)
+	file.SendingPayloadMapCapacity = DefaultSendingPayloadMapCapacity
+	file.SendingPayloadMap = make(map[int64]*payload.Payload, file.SendingPayloadMapCapacity)
+	file.WaitForSendingPayloadMapSpaceChannel = make(chan bool, file.SendingPayloadMapCapacity)
 
 	SendingFileMap.PutFile(file)
 
-	go file.loopToReadChunk()
-	go file.loopToSendDataPayload()
+	go file.loopToReadPayload()
+	go file.loopToSendPayload()
 
 	return file, nil
 }
 
-func (file *File) loopToReadChunk() error {
-	file.ChunkBuffer = make([]*Chunk, 0, file.ChunkBufferSize)
-	currentChunkNo := 0
+func (file *File) loopToReadPayload() error {
+	srcFileReader := bufio.NewReader(file.SrcFileHandle)
+	var payloadNo int64 = 0
+	buffer := make([]byte, file.PayloadDataSize)
 
 	for {
 		if file.Session.IsDisconnected {
 			break
 		}
 
-		if len(file.ChunkBuffer) < file.ChunkBufferSize {
-			currentChunk, err := file.ReadChunk(currentChunkNo)
-			if err != nil { return err }
-
-			log.Println("ReadChunk:", currentChunkNo)
-
-			file.ChunkBuffer = append(file.ChunkBuffer, currentChunk)
-
-			if currentChunk.IsLast {
-				file.IsReadingFinished = true
-				break
+		if len(file.SendingPayloadMap) < file.SendingPayloadMapCapacity {
+			bufferLength, err := srcFileReader.Read(buffer)
+			if err != nil {
+				if err == io.EOF {
+					file.IsReadingFinished = true
+					break
+				} else {
+					return err
+				}
 			}
 
-			currentChunkNo++
+			// log.Println("srcFileReader.Read(buffer):", bufferLength, payloadNo)
+
+			currentPayload := NewDataPayload(file, payloadNo, buffer, bufferLength)
+			file.SendingPayloadMap[payloadNo] = currentPayload
+
+			payloadNo++
+
 		} else {
 			if !file.IsReadingFinished {
-				<- file.WaitForChunkBufferSpaceChannel
+				<- file.WaitForSendingPayloadMapSpaceChannel
 			}
 		}
 	}
@@ -83,66 +91,70 @@ func (file *File) loopToReadChunk() error {
 	return nil
 }
 
-func (file *File) loopToSendDataPayload() error {
+var prevTime time.Time
+
+func (file *File) loopToSendPayload() error {
 	for {
-		if file.Session.IsDisconnected { break }
-
-		if file.FinishedChunkBitSet.All() { break }
-
-		sendingPayloadsCapacity := len(file.ChunkBuffer) * file.PayloadCountInChunk
-		sendingPayloads := make([]*payload.Payload, 0, sendingPayloadsCapacity)
-		for _, currentChunk := range file.ChunkBuffer {
-			for payloadPos, currentPayload := range currentChunk.Payloads[:currentChunk.PayloadsLength] {
-				if !currentChunk.ReceivedPayloadBitSet.Test(uint(payloadPos)) {
-					sendingPayloads = append(sendingPayloads, currentPayload)
-				}
-			}
+		if file.Session.IsDisconnected {
+			break
 		}
 
-		time.Sleep(1 * time.Nanosecond)
+		sendingPayloadMapLength := len(file.SendingPayloadMap)
 
-		for payloadPos, currentPayload := range sendingPayloads {
-			if file.Session.IsDisconnected { return nil }
+		if file.IsReadingFinished && sendingPayloadMapLength == 0 {
+			file.IsSendingFinished = true
 
-			currentPayload = currentPayload
-			payloadPos = payloadPos
+			log.Println("Ended loopToSendPayload:", file.FileId)
+			log.Println("Time:", time.Now().Sub(StartToReadFileTime))
+			os.Exit(0)
+
+			return nil
+		}
+
+		sortedPayloadNoList := make(int64array, sendingPayloadMapLength)
+		i := 0
+		for payloadNo, _ := range file.SendingPayloadMap {
+			sortedPayloadNoList[i] = payloadNo
+			i++
+			if i > sendingPayloadMapLength { break }
+		}
+		sortedPayloadNoList.Sort()
+
+		for i, payloadNo := range sortedPayloadNoList {
+			if file.Session.IsDisconnected {
+				return nil
+			}
+
+			currentPayload := file.SendingPayloadMap[payloadNo]
+			if currentPayload == nil {
+				continue
+			}
 
 			err := udpsender.SendPayload(currentPayload)
 			if err != nil {
-				log.Println("failed to udp.SendPayload():", err)
+				log.Println("Failed to udp.SendPayload():", err)
 			}
 
 			gap := file.Session.SendingPayloadGap
+			// gap -= time.Duration(8 * time.Millisecond)
+			// if gap <= time.Duration(0) {
+			// 	gap = time.Duration(1 * time.Nanosecond)
+			// }
 			// log.Println("gap:", gap)
-			// gap = gap / 2
-			// gap -= time.Duration(8 * time.Microsecond)
-			// gap = time.Duration(120000 * time.Nanosecond)
-			if gap < 0 {
-				gap = time.Duration(1 * time.Nanosecond)
-			}
-			// log.Println("gap:", gap)
-			time.Sleep(gap)
-		}
-	}
+			// if i % 10 == 0 {
+			// 	time.Sleep(gap)
+			// }
+			i = i
+			gap = gap
+			// time.Sleep(gap - incDuration)
+			// incDuration += time.Duration(10 * time.Nanosecond)
+			// time.Sleep(gap)
 
-	return nil
-}
+			currentTime := time.Now()
+			log.Println("time diff:", currentTime.Sub(prevTime), payloadNo, file.Session.SendingPayloadGap)
+			prevTime = currentTime
 
-func (file *File) DeleteReceivedPayloads(chunkNo int, receivedPayloadBitSet *bitset.BitSet) error {
-	for index, currentChunk := range file.ChunkBuffer {
-		if currentChunk.ChunkNo == chunkNo {
-			if receivedPayloadBitSet.All() {
-				file.ChunkBuffer = append(file.ChunkBuffer[:index], file.ChunkBuffer[index+1:]...)
-				file.FinishedChunkBitSet.Set(uint(chunkNo))
-
-				if !file.IsReadingFinished {
-					file.WaitForChunkBufferSpaceChannel <- true
-				}
-
-			} else {
-				currentChunk.ReceivedPayloadBitSet = receivedPayloadBitSet
-			}
-			break
+			// log.Println("send payloadNo:", payloadNo)
 		}
 	}
 

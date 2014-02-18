@@ -8,7 +8,6 @@ import (
 	"time"
 	"github.com/nu7hatch/gouuid"
 	"../http"
-	// "../udp"
 	"../server"
 	"../client"
 	"../file"
@@ -17,8 +16,8 @@ import (
 
 func TestInitialPayloadGap(t *testing.T) {
 	// host := "127.0.0.1"
-	host := "dev.pricepoller.com"
-	// host := "128.199.245.227"
+	// host := "dev.pricepoller.com"
+	host := "128.199.245.227"
 	httpPort := 8080
 	tcpPort := 20068
 	udpPort := 20069
@@ -46,6 +45,7 @@ func TestInitialPayloadGap(t *testing.T) {
 
 	fileId, err := uuid.NewV4()
 
+	// srcFilePath := "../test.mp3"
 	srcFilePath := "../jdk.tar"
 	srcFileInfo, err := os.Stat(srcFilePath)
 	if err != nil {

@@ -2,9 +2,11 @@ package file
 
 import (
 	"os"
+	"time"
 	"github.com/nu7hatch/gouuid"
 	"github.com/willf/bitset"
 	"../session"
+	"../payload"
 )
 
 type File struct {
@@ -20,13 +22,14 @@ type File struct {
 	FileSize int64
 	PayloadDataSize int
 	PayloadCountInChunk int
-	
-	ChunkBufferSize int
-	ChunkBuffer []*Chunk
-	WaitForChunkBufferSpaceChannel chan bool
-	FinishedChunkBitSet *bitset.BitSet
 
-	ReceivingChunkMap map[int]*Chunk
+	SendingPayloadMapCapacity int
+	SendingPayloadMap map[int64]*payload.Payload
+	WaitForSendingPayloadMapSpaceChannel chan bool
+	
+	ReceivedPayloadBitSet *bitset.BitSet
+	AckPayloadData []byte
+	LastAck1SentTime time.Time
 	
 	IsReadingFinished bool
 	IsSendingFinished bool

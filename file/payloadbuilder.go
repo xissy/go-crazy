@@ -25,12 +25,12 @@ func NewDataPayload(file *File, payloadNo int64, data []byte, dataLength int) *p
 }
 
 func (chunk *Chunk) NewNak1Payload() (*payload.Payload, error) {
-	currentPayload := new (payload.Payload)
+	currentPayload := new(payload.Payload)
 
 	currentPayload.UdpAddr = chunk.File.Session.UdpAddr
 	currentPayload.UdpConn = chunk.File.Session.UdpConn
 
-	buffer := make([]byte, 0, 8000)
+	buffer := make([]byte, 0, 1400)
 	buffer = append(buffer, []byte("NAK1")...)
 	buffer = append(buffer, chunk.File.FileId[:]...)
 
@@ -46,4 +46,21 @@ func (chunk *Chunk) NewNak1Payload() (*payload.Payload, error) {
 	currentPayload.BufferLength = len(buffer)
 
 	return currentPayload, nil
+}
+
+func (file *File) NewAck1Payload(ackData []byte) *payload.Payload {
+	currentPayload := new(payload.Payload)
+
+	currentPayload.UdpAddr = file.Session.UdpAddr
+	currentPayload.UdpConn = file.Session.UdpConn
+
+	buffer := make([]byte, 0, 1400)
+	buffer = append(buffer, []byte("ACK1")...)
+	buffer = append(buffer, file.FileId[:]...)
+	buffer = append(buffer, ackData...)
+
+	currentPayload.Buffer = buffer
+	currentPayload.BufferLength = len(buffer)
+
+	return currentPayload
 }

@@ -3,16 +3,13 @@ package udp
 import (
 	"net"
 	"log"
-	"os"
 	"encoding/binary"
 	"time"
 	"errors"
 	"github.com/nu7hatch/gouuid"
-	"github.com/willf/bitset"
 	"../payload"
 	"../session"
 	"../file"
-	"../udpsender"
 )
 
 var i int
@@ -72,6 +69,11 @@ func handlePayload(currentPayload *payload.Payload) error {
 	bufferLength := currentPayload.BufferLength
 	opCode := string(buffer[:4])
 
+	defer func() {
+		buffer = nil
+		currentPayload = nil
+	}()
+
 	// log.Println("BufferLength:", currentPayload.BufferLength)
 	// log.Println("opCode:", opCode)
 
@@ -112,8 +114,6 @@ func handlePayload(currentPayload *payload.Payload) error {
 			}
 		}
 
-		buffer = nil
-
 		// log.Println("currentSession.PrevInitialPayloadTime:", currentSession.PrevInitialPayloadTime)
 		// log.Println("currentSession.InitialPayloadGapSum:", currentSession.InitialPayloadGapSum)
 		// log.Println("currentSession.InitialPayloadCount:", currentSession.InitialPayloadCount)
@@ -132,68 +132,21 @@ func handlePayload(currentPayload *payload.Payload) error {
 		payloadNo, _ := binary.Varint(buffer[20:28])
 		payloadNo = payloadNo
 		
-		// log.Println("received DATA:",  fileId, payloadNo, i)
+		log.Println("received DATA:",  fileId, payloadNo, i)
 		i++
 
-		chunkNo := int(payloadNo / int64(currentFile.PayloadCountInChunk))
+		currentFile.BuildAndSendAckPayload(payloadNo)
 
-		payloadNoInChunk := int(payloadNo % int64(currentFile.PayloadCountInChunk))
+		if !currentFile.ReceivedPayloadBitSet.Test(uint(payloadNo)) {
+			var payloadOffset int64 = payloadNo * int64(currentFile.PayloadDataSize)
+			currentFile.DestFileHandle.WriteAt(buffer[28:bufferLength], payloadOffset)
 
-		if currentFile.ReceivingChunkMap[chunkNo] == nil {
-			chunk := currentFile.NewChunk(chunkNo)
-
-			// calculate PayloadsLength.
-			chunkStartPosition := 
-				int64(chunkNo) * int64(currentFile.PayloadDataSize) * 
-					int64(currentFile.PayloadCountInChunk)
-			chunkFullEndPosition := 
-				chunkStartPosition + 
-					(int64(currentFile.PayloadDataSize) * int64(currentFile.PayloadCountInChunk))
-			
-			if chunkFullEndPosition <= currentFile.FileSize {
-				chunk.PayloadsLength = currentFile.PayloadCountInChunk
-			} else {
-				chunk.PayloadsLength = 
-					int((currentFile.FileSize - chunkStartPosition) / int64(currentFile.PayloadDataSize)) + 1
-			}
-
-			chunk.ReceivedPayloadBitSet = bitset.New(uint(chunk.PayloadsLength))
-
-			currentFile.ReceivingChunkMap[chunkNo] = chunk
-		}
-
-		chunk := currentFile.ReceivingChunkMap[chunkNo]
-		chunk.Payloads[payloadNoInChunk] = currentPayload
-		chunk.ReceivedPayloadBitSet.Set(uint(payloadNoInChunk))
-
-		if i % 10 == 0 {
-			nak1Payload, _ := chunk.NewNak1Payload()
-			if nak1Payload != nil {
-				udpsender.SendPayload(nak1Payload)
-			}
-		}
-
-		if chunk.ReceivedPayloadBitSet.All() {
-			nak1Payload, _ := chunk.NewNak1Payload()
-			if nak1Payload != nil {
-				udpsender.SendPayload(nak1Payload)
-			}
-
-			udpsender.SendPayload(nak1Payload)
-
-			if !currentFile.FinishedChunkBitSet.Test(uint(chunkNo)) {
-				chunk.WriteToFile(currentFile)
-
-				currentFile.FinishedChunkBitSet.Set(uint(chunkNo))
-
-				if currentFile.FinishedChunkBitSet.All() {
-					delete(file.ReceivingFileMap, *fileId)
-					// os.Exit(0)
-				}
-			}
+			currentFile.ReceivedPayloadBitSet.Set(uint(payloadNo))
 		}
 		
 	case "NAK1":
+
+	case "ACK1":
 		fileId := new(uuid.UUID)
 		copy(fileId[:], buffer[4:20])
 
@@ -201,28 +154,25 @@ func handlePayload(currentPayload *payload.Payload) error {
 		if err != nil { return err }
 		if currentFile == nil { return errors.New("currentFile is nil.") }
 
-		chunkNoInt64, _ := binary.Varint(buffer[20:28])		
-		chunkNo := int(chunkNoInt64)
-		
-		// log.Println("received NAK1:",  fileId, chunkNo, i)
-		i++
+		ackData := buffer[20:bufferLength]
+		// log.Println("ackData:", ackData)
+		for pos := 0; pos < len(ackData); pos += 16 {
+			startPayloadNo, _ := binary.Varint(ackData[pos:pos+8])
+			endPayloadNo, _ := binary.Varint(ackData[pos+8:])
+			// log.Println("startPayloadNo, endPayloadNo:", startPayloadNo, endPayloadNo)
 
-		receivedPayloadBitSet := new(bitset.BitSet)
-		receivedPayloadBitSet.UnmarshalJSON(buffer[28:bufferLength])
+			for payloadNo := startPayloadNo; payloadNo <= endPayloadNo; payloadNo++ {
+				// log.Println("payloadNo:", payloadNo)
+				delete(currentFile.SendingPayloadMap, payloadNo)
 
-		err = currentFile.DeleteReceivedPayloads(chunkNo, receivedPayloadBitSet)
-
-		// log.Println("currentFile.FinishedChunkBitSet:", currentFile.FinishedChunkBitSet.DumpAsBits())
-
-		if currentFile.FinishedChunkBitSet.All() {
-			log.Println("Time:", time.Now().Sub(file.StartToReadFileTime))
-
-			os.Exit(0)
+				if !currentFile.IsReadingFinished {
+					currentFile.WaitForSendingPayloadMapSpaceChannel <- true
+				}
+			}
 		}
 
-		buffer = nil
-
-	case "ACK1":
+		// log.Println("After ACK1:", len(currentFile.SendingPayloadMap))
+		log.Println("After ACK1:")
 
 	case "ACK2":
 	}
