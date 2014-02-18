@@ -83,6 +83,9 @@ func (file *File) loopToReadChunk() error {
 	return nil
 }
 
+var prevTime time.Time
+var i int
+
 func (file *File) loopToSendDataPayload() error {
 	for {
 		if file.Session.IsDisconnected { break }
@@ -101,11 +104,8 @@ func (file *File) loopToSendDataPayload() error {
 
 		time.Sleep(1 * time.Nanosecond)
 
-		for payloadPos, currentPayload := range sendingPayloads {
+		for _, currentPayload := range sendingPayloads {
 			if file.Session.IsDisconnected { return nil }
-
-			currentPayload = currentPayload
-			payloadPos = payloadPos
 
 			err := udpsender.SendPayload(currentPayload)
 			if err != nil {
@@ -115,13 +115,21 @@ func (file *File) loopToSendDataPayload() error {
 			gap := file.Session.SendingPayloadGap
 			// log.Println("gap:", gap)
 			// gap = gap / 2
-			// gap -= time.Duration(8 * time.Microsecond)
+			gap -= time.Duration(16 * time.Microsecond)
 			// gap = time.Duration(120000 * time.Nanosecond)
 			if gap < 0 {
 				gap = time.Duration(1 * time.Nanosecond)
 			}
 			// log.Println("gap:", gap)
-			time.Sleep(gap)
+			if i % 10 == 0 {
+				time.Sleep(gap)
+			}
+			// time.Sleep(gap)
+			i++
+
+			currentTime := time.Now()
+			log.Println("time diff:", currentTime.Sub(prevTime), file.Session.SendingPayloadGap)
+			prevTime = currentTime
 		}
 	}
 
