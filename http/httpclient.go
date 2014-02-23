@@ -63,3 +63,20 @@ func SendFile(baseUrl string, sessionId *uuid.UUID, fileInfo *FileInfo) (*Messag
 
 	return message, nil
 }
+
+func ReceiveFile(baseUrl string, sessionId* uuid.UUID, fileInfo *FileInfo) (*Message, error) {
+	finalUrl := fmt.Sprintf("%s/sessions/%s/receive", baseUrl, sessionId.String())
+
+	fileInfoJson, err := json.Marshal(*fileInfo)
+	if err != nil { return nil, err }
+
+	fileInfoJsonReader := bytes.NewReader(fileInfoJson)
+
+	res, err := http.Post(finalUrl, "application/json", fileInfoJsonReader)
+	if err != nil { return nil, err }
+
+	message, err := unmarshalResponse(res)
+	if err != nil { return nil, err }
+
+	return message, nil
+}

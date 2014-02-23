@@ -15,12 +15,8 @@ import (
 	"../udpsender"
 )
 
-var i int
-
 func loopToReadPayload(payloadChannel chan *payload.Payload,
 					udpConn *net.UDPConn) error {
-	i++
-
 	for {
 		buffer := make([]byte, 1400)
 
@@ -132,8 +128,8 @@ func handlePayload(currentPayload *payload.Payload) error {
 		payloadNo, _ := binary.Varint(buffer[20:28])
 		payloadNo = payloadNo
 		
-		// log.Println("received DATA:",  fileId, payloadNo, i)
-		i++
+		// log.Println("received DATA:",  fileId, payloadNo, currentFile.ReceivedPayloadCount)
+		currentFile.ReceivedPayloadCount++
 
 		chunkNo := int(payloadNo / int64(currentFile.PayloadCountInChunk))
 
@@ -166,7 +162,7 @@ func handlePayload(currentPayload *payload.Payload) error {
 		chunk.Payloads[payloadNoInChunk] = currentPayload
 		chunk.ReceivedPayloadBitSet.Set(uint(payloadNoInChunk))
 
-		if i % 10 == 0 {
+		if currentFile.ReceivedPayloadCount % 10 == 0 {
 			nak1Payload, _ := chunk.NewNak1Payload()
 			if nak1Payload != nil {
 				udpsender.SendPayload(nak1Payload)
@@ -203,16 +199,11 @@ func handlePayload(currentPayload *payload.Payload) error {
 
 		chunkNoInt64, _ := binary.Varint(buffer[20:28])		
 		chunkNo := int(chunkNoInt64)
-		
-		// log.Println("received NAK1:",  fileId, chunkNo, i)
-		i++
 
 		receivedPayloadBitSet := new(bitset.BitSet)
 		receivedPayloadBitSet.UnmarshalJSON(buffer[28:bufferLength])
 
 		err = currentFile.DeleteReceivedPayloads(chunkNo, receivedPayloadBitSet)
-
-		// log.Println("currentFile.FinishedChunkBitSet:", currentFile.FinishedChunkBitSet.DumpAsBits())
 
 		if currentFile.FinishedChunkBitSet.All() {
 			log.Println("Time:", time.Now().Sub(file.StartToReadFileTime))

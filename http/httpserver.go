@@ -77,12 +77,7 @@ func SendFileHandler(w *rest.ResponseWriter, req *rest.Request) {
 	currentFile.SessionId = currentSession.SessionId
 	currentFile.Session = currentSession
 
-	log.Println("currentFile:", currentFile)
-
 	file.ReceivingFileMap.PutFile(currentFile)
-
-	log.Println(file.ReceivingFileMap)
-	log.Println(file.ReceivingFileMap[*currentFile.FileId])
 
 	file.StartToWriteFile(currentFile)
 
@@ -94,6 +89,49 @@ func SendFileHandler(w *rest.ResponseWriter, req *rest.Request) {
 	w.WriteJson(&message)	
 }
 
+func ReceiveFileHandler(w *rest.ResponseWriter, req *rest.Request) {
+	currentFile := new(file.File)
+	req.DecodeJsonPayload(currentFile)
+
+	sessionIdString := req.PathParam("sessionId")
+	sessionId, err := uuid.ParseHex(sessionIdString)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	fileId, err := uuid.NewV4()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	currentFile.FileId = fileId
+
+	currentFile, err = file.StartToReadFile(sessionId, currentFile.FileId, currentFile.SrcFilePath)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	log.Println("currentFile:", currentFile)
+
+	file.SendingFileMap.PutFile(currentFile)	
+
+	message := Message {
+		IsSuccess: true,
+		SessionId: sessionId,
+		FileId: currentFile.FileId,
+		FileSize: currentFile.FileSize,
+		PayloadDataSize: currentFile.PayloadDataSize,
+		PayloadCountInChunk: currentFile.PayloadCountInChunk,
+	}
+
+	log.Println("message:", message)
+
+	w.WriteJson(&message)
+}
+
 func StartHttpServer(httpPort int) error {
 	log.Println("Trying to start HTTP server port:", httpPort)
 
@@ -102,6 +140,7 @@ func StartHttpServer(httpPort int) error {
 		rest.Route{ "POST", "/sessions", CreateSessionHandler },
 		rest.Route{ "GET", "/sessions/:sessionId/auth", AuthSessionHandler },
 		rest.Route{ "POST", "/sessions/:sessionId/send", SendFileHandler },
+		rest.Route{ "POST", "/sessions/:sessionId/receive", ReceiveFileHandler },
 	)
 
 	go http.ListenAndServe(":8080", &handler)

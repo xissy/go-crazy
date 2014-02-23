@@ -27,6 +27,7 @@ type File struct {
 	FinishedChunkBitSet *bitset.BitSet
 
 	ReceivingChunkMap map[int]*Chunk
+	ReceivedPayloadCount int
 	
 	IsReadingFinished bool
 	IsSendingFinished bool

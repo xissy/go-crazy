@@ -35,6 +35,7 @@ func StartToReadFile(sessionId *uuid.UUID, fileId *uuid.UUID, filename string) (
 	file.Session = currentSession
 	file.FileId = fileId
 	file.SrcFileHandle = srcFileHandle
+	file.FileSize = srcFileSize
 	file.PayloadDataSize = payload.DefaultPayloadDataSize
 	file.PayloadCountInChunk = DefaultPayloadCountInChunk
 	file.ChunkBufferSize = DefaultChunkBufferSize
@@ -113,22 +114,10 @@ func (file *File) loopToSendDataPayload() error {
 			}
 
 			gap := file.Session.SendingPayloadGap
-			// log.Println("gap:", gap)
-			// gap = gap / 2
-			gap -= time.Duration(16 * time.Microsecond)
-			// gap = time.Duration(120000 * time.Nanosecond)
-			if gap < 0 {
-				gap = time.Duration(1 * time.Nanosecond)
-			}
-			// log.Println("gap:", gap)
-			if i % 10 == 0 {
-				time.Sleep(gap)
-			}
-			// time.Sleep(gap)
-			i++
+			time.Sleep(gap)
 
 			currentTime := time.Now()
-			log.Println("time diff:", currentTime.Sub(prevTime), file.Session.SendingPayloadGap)
+			// log.Println("time diff:", currentTime.Sub(prevTime), file.Session.SendingPayloadGap)
 			prevTime = currentTime
 		}
 	}
