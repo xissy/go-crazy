@@ -5,7 +5,7 @@
 
 
 ## Why I've built this
-Recently I’ve been heard about Golang that has strong weapons for concurrent programming — `goroutine` & `channel`. A goroutine is a hassle-free lightweight thread. And a channel is a way of communicating between goroutines. Using channels sharing variables could be removed that means we don’t need to worry about a race-condition anymore. Sounds great.
+Recently I’ve been heard about Golang that has strong weapons for concurrent programming — `goroutine` & `channel`. A goroutine is a hassle-free lightweight thread. And a channel is a way of communicating between goroutines. Using channels, sharing variables could be removed. That means we don’t need to worry about a race-condition anymore. Sounds great.
 
 I majored in computer science and have 10 years programming experience in diverse languages and environments. I’m familiar with Java concurrent package and Node.js’ event driven model but sometimes I’ve felt that these are not perfect solutions to manage a multi-core processor. So I decided to taste the power of Golang and implemented a complex network application — WAN accelerator. Because, IMHO, one of the best ways to approach concurrent programming is using network sockets.
 
